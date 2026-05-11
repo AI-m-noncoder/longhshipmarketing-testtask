@@ -1,0 +1,514 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "function generateUUID() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {\n    const r = Math.random() * 16 | 0;\n    const v = c === 'x' ? r : (r & 0x3 | 0x8);\n    return v.toString(16);\n  });\n}\n\nreturn [{\n  json: {\n    run_id: generateUUID(),\n    started_at: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        112
+      ],
+      "id": "fda68150-4d8a-49df-a81e-e9349a9314b7",
+      "name": "Create run_id"
+    },
+    {
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/AI-m-noncoder/longhshipmarketing-testtask/908832246ec9bf8d2279cd3076a5651e03388b1b/campaigns.csv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        400,
+        0
+      ],
+      "id": "6fe89582-0707-4888-9ba1-3ab6b884079a",
+      "name": "read csv"
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $input.first().json.data;\nconst lines = text.trim().split('\\n');\nconst headers = lines[0].split(',');\n\nreturn lines.slice(1).map(line => {\n  const values = line.split(',');\n  const row = {};\n  headers.forEach((header, i) => {\n    row[header.trim()] = values[i]?.trim();\n  });\n  return { json: { ...row, source: \"csv\" } };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        0
+      ],
+      "id": "b0d02a80-401a-424d-94e3-1e0aacc85806",
+      "name": "read csv1"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "app3qzxuZ9n9v7LaH",
+          "mode": "list",
+          "cachedResultName": "Longship marking test task",
+          "cachedResultUrl": "https://airtable.com/app3qzxuZ9n9v7LaH"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblrA7NOZ9Ft0xNnf",
+          "mode": "list",
+          "cachedResultName": "Table 1",
+          "cachedResultUrl": "https://airtable.com/app3qzxuZ9n9v7LaH/tblrA7NOZ9Ft0xNnf"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        496,
+        224
+      ],
+      "id": "432f07bb-b445-44b0-8a64-168a2d4210d1",
+      "name": "Search records",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "3qtF9VOV3UqZo7Tp",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  const r = item.json.fields;\n  return {\n    json: {\n      campaign_name: r.Name || r.campaign_name,\n      date: r.date || r.Date,\n      impressions: Number(r.Impressions || r.impressions || 0),\n      clicks: Number(r.clicks || r.Clicks || 0),\n      conversions: Number(r.conversions || r.Conversions || 0),\n      spend: Number(r.spend || r.Spend || 0),\n      source: \"airtable\",\n      run_id: $('Create run_id').first().json.run_id\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        224
+      ],
+      "id": "5df086a1-1896-4225-8f50-92ae0a507cde",
+      "name": "normalize airtable"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  const r = item.json;\n  return {\n    json: {\n      campaign_name: r.campaign_name || r.Name || r.name,\n      date: r.date || r.Date,\n      impressions: Number(r.impressions || 0),\n      clicks: Number(r.clicks || 0),\n      conversions: Number(r.conversions || 0),\n      spend: Number(r.spend || 0),\n      source: \"csv\",\n      run_id: $('Create run_id').first().json.run_id\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        0
+      ],
+      "id": "09aba4a5-f0c2-455a-892d-6cb970b9936d",
+      "name": "normalize csv"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1072,
+        112
+      ],
+      "id": "95154dcb-5521-41a7-a122-a3388f768734",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const campaigns = $input.all().map(i => i.json);\n\n// Calculate per-campaign metrics\nconst withMetrics = campaigns.map(c => {\n  const ctr = c.impressions > 0 ? c.clicks / c.impressions : 0;\n  const cpc = c.clicks > 0 ? c.spend / c.clicks : 0;\n  const conversion_rate = c.clicks > 0 ? c.conversions / c.clicks : 0;\n  \n  return { ...c, ctr, cpc, conversion_rate };\n});\n\n// Calculate averages across all campaigns\nconst avg_ctr = withMetrics.reduce((s, c) => s + c.ctr, 0) / withMetrics.length;\nconst avg_conversion_rate = withMetrics.reduce((s, c) => s + c.conversion_rate, 0) / withMetrics.length;\nconst total_spend = withMetrics.reduce((s, c) => s + c.spend, 0);\n\n// Find top performer by conversion rate\nconst top = withMetrics.reduce((a, b) => a.conversion_rate > b.conversion_rate ? a : b);\n\n// Flag anomalies — campaigns >50% above or below average CTR\nconst withAnomalies = withMetrics.map(c => {\n  let is_anomaly = false;\n  let anomaly_reason = null;\n\n  if (c.ctr > avg_ctr * 1.5) {\n    is_anomaly = true;\n    anomaly_reason = `CTR ${(c.ctr * 100).toFixed(2)}% is >50% above average`;\n  } else if (c.ctr < avg_ctr * 0.5) {\n    is_anomaly = true;\n    anomaly_reason = `CTR ${(c.ctr * 100).toFixed(2)}% is >50% below average`;\n  }\n\n  return { ...c, is_anomaly, anomaly_reason };\n});\n\n// Pass each campaign forward with summary data attached\nreturn withAnomalies.map(c => ({\n  json: {\n    ...c,\n    avg_ctr,\n    avg_conversion_rate,\n    total_spend,\n    top_performer: top.campaign_name\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        112
+      ],
+      "id": "877a15a8-6cf2-46c6-a7d6-c1093415d8c8",
+      "name": "calc metrics"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        2080,
+        112
+      ],
+      "id": "4c8037d1-ff11-4d79-9915-d7e0ff6cde04",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "model": "google/gemini-2.0-flash-001",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        2064,
+        304
+      ],
+      "id": "ec74af31-b777-4ff1-b0ad-808f903296c4",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "5gzJAGWiQMGDcd4i",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const campaigns = $input.all().map(i => i.json);\n\n// Build campaign table for the prompt\nconst campaignTable = campaigns.map(c => \n  `- ${c.campaign_name} | CTR: ${(c.ctr * 100).toFixed(2)}% | CVR: ${(c.conversion_rate * 100).toFixed(2)}% | Spend: $${c.spend} | Source: ${c.source}${c.is_anomaly ? ` | ⚠️ ANOMALY: ${c.anomaly_reason}` : ''}`\n).join('\\n');\n\n// Pick anomalies\nconst anomalies = campaigns.filter(c => c.is_anomaly).map(c => c.campaign_name).join(', ');\n\nconst prompt = `You are a senior marketing analyst. Write a concise 3-paragraph executive summary for a marketing director.\n\nCampaign Performance Data:\n${campaignTable}\n\nKey Stats:\n- Total spend: $${campaigns[0].total_spend}\n- Average CTR: ${(campaigns[0].avg_ctr * 100).toFixed(2)}%\n- Average CVR: ${(campaigns[0].avg_conversion_rate * 100).toFixed(2)}%\n- Top performer: ${campaigns[0].top_performer}\n- Anomalies detected: ${anomalies}\n\nRequirements:\n- Paragraph 1: Overall performance overview\n- Paragraph 2: Highlight top performer and why it stands out\n- Paragraph 3: Call out anomalies with actionable recommendations\n\nProfessional but accessible tone.`;\n\nreturn [{ \n  json: { \n    prompt,\n    top_performer: campaigns[0].top_performer,\n    avg_ctr: campaigns[0].avg_ctr,\n    avg_conversion_rate: campaigns[0].avg_conversion_rate,\n    total_spend: campaigns[0].total_spend,\nrun_id: campaigns[0].run_id  } \n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1856,
+        112
+      ],
+      "id": "f8ed8206-ebeb-467c-908f-a4810e8e9c8a",
+      "name": "llm input"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO campaign_metrics (\n  run_id, campaign_name, report_date, impressions, clicks, \n  conversions, spend, ctr, cpc, conversion_rate, \n  is_anomaly, anomaly_reason, source\n) VALUES (\n  '{{ $json.run_id }}',\n  '{{ $json.campaign_name }}',\n  '{{ $json.date }}',\n  {{ $json.impressions }},\n  {{ $json.clicks }},\n  {{ $json.conversions }},\n  {{ $json.spend }},\n  {{ $json.ctr }},\n  {{ $json.cpc }},\n  {{ $json.conversion_rate }},\n  {{ $json.is_anomaly }},\n  {{ $json.anomaly_reason ? `'${$json.anomaly_reason}'` : 'NULL' }},\n  '{{ $json.source }}'\n)",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1888,
+        784
+      ],
+      "id": "c663d6d0-713b-4bab-9064-c8d2baa735de",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "Vh15H7XF4AUkIxq0",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO insight_summaries (\n  run_id, summary_text, top_performer,\n  avg_ctr, avg_conversion_rate, total_spend\n) VALUES (\n  '{{ $('llm input').first().json.run_id }}',\n  '{{ $json.text.replace(/'/g, \"''\") }}',\n  '{{ $('llm input').first().json.top_performer }}',\n  {{ $('llm input').first().json.avg_ctr }},\n  {{ $('llm input').first().json.avg_conversion_rate }},\n  {{ $('llm input').first().json.total_spend }}\n)",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2352,
+        768
+      ],
+      "id": "d305fdc6-9324-4545-a5bd-b58049295c0b",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "Vh15H7XF4AUkIxq0",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -256,
+        192
+      ],
+      "id": "256d5006-d685-430e-a95a-65f79a9596f2",
+      "name": "Click trigger"
+    },
+    {
+      "parameters": {
+        "content": "## CLICK TRIGGER\nManual trigger with optional filters:\n- date_from / date_to: filter by campaign date\n- campaign_filter: filter by campaign name (partial match)\nLeave empty to process all campaigns.",
+        "height": 368,
+        "width": 288
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -288,
+        -32
+      ],
+      "typeVersion": 1,
+      "id": "a267545e-4227-484c-9b72-f8c38e990079",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## DATA\nTwo parallel sources are merged into a unified format.\nCSV: loaded from GitHub raw URL (mock for demo — \nin production replace with S3, SFTP, or Google Drive).\nAirtable: live integration via Personal Access Token.\nColumn normalization handles different naming conventions.",
+        "height": 736,
+        "width": 752,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        272,
+        -160
+      ],
+      "typeVersion": 1,
+      "id": "349105d9-a2ba-4232-a0b8-679bd116cdd5",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n// Check if filters were passed from either trigger\nconst trigger = $('Click trigger').first().json;\nconst dateFrom = trigger?.date_from || null;\nconst dateTo = trigger?.date_to || null;\nconst campaignFilter = trigger?.campaign_filter || null;\n\nif (!items || items.length === 0) {\n  throw new Error('Dataset is empty — no campaigns to process.');\n}\n\nlet filtered = items;\n\nif (dateFrom || dateTo) {\n  filtered = filtered.filter(item => {\n    const date = new Date(item.json.date);\n    if (dateFrom && date < new Date(dateFrom)) return false;\n    if (dateTo && date > new Date(dateTo)) return false;\n    return true;\n  });\n}\n\nif (campaignFilter) {\n  filtered = filtered.filter(item =>\n    item.json.campaign_name?.toLowerCase().includes(campaignFilter.toLowerCase())\n  );\n}\n\nif (filtered.length === 0) {\n  throw new Error(`No campaigns match the given filters.`);\n}\n\nreturn filtered;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        112
+      ],
+      "id": "e34eeef2-3421-4581-9fdd-d0cefb6c17cf",
+      "name": "data check"
+    },
+    {
+      "parameters": {
+        "content": "## VALIDATION & FILTERING\n- Stops workflow if dataset is empty\n- Applies optional date range and name filters\n- Warns if fewer than 2 campaigns (anomaly detection unreliable)",
+        "height": 528,
+        "width": 256
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1200,
+        -96
+      ],
+      "typeVersion": 1,
+      "id": "dee7d4c1-b2d3-49a5-973f-b3589f2b0462",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## METRICS CALCULATION\n\nPer campaign: CTR, CPC, Conversion Rate\nAggregates: avg CTR, avg CVR, total spend, top performer\nAnomaly rule: CTR >50% above or below average = flagged",
+        "height": 528,
+        "width": 256,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1456,
+        -96
+      ],
+      "typeVersion": 1,
+      "id": "cfc68f45-cd82-41e5-bd12-1510a8296b2c",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "## LLM SUMMARY\nModel: google/gemini-2.0-flash via OpenRouter\nAll 10 campaigns aggregated into single prompt.\nOutput: 3-paragraph executive summary for marketing director.",
+        "height": 640,
+        "width": 352
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2032,
+        -128
+      ],
+      "typeVersion": 1,
+      "id": "44ae416f-2eb9-46e4-a077-ead7b7b9caaf",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "## STORAGE\ncampaign_metrics: one row per campaign per run\ninsight_summaries: one row per run\nrun_id links both tables — enables idempotency checks\nand historical comparison across runs.",
+        "height": 368,
+        "width": 720,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1824,
+        592
+      ],
+      "typeVersion": 1,
+      "id": "6042d7ed-19c2-4571-b9b5-e273e32dde42",
+      "name": "Sticky Note5"
+    }
+  ],
+  "pinData": {
+    "Click trigger": [
+      {
+        "json": {
+          "date_from": "2024-06-01",
+          "date_to": "2024-06-30",
+          "campaign_filter": "EU"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Create run_id": {
+      "main": [
+        [
+          {
+            "node": "read csv",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Search records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "read csv": {
+      "main": [
+        [
+          {
+            "node": "read csv1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search records": {
+      "main": [
+        [
+          {
+            "node": "normalize airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "read csv1": {
+      "main": [
+        [
+          {
+            "node": "normalize csv",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "normalize csv": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "normalize airtable": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "data check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calc metrics": {
+      "main": [
+        [
+          {
+            "node": "llm input",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "llm input": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Click trigger": {
+      "main": [
+        [
+          {
+            "node": "Create run_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "data check": {
+      "main": [
+        [
+          {
+            "node": "calc metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b8a61e68-562f-4a19-9d22-59cdad8088b5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b74321fc864329f9730124f5826da9bfe2d3fe3edd1fb8e290bca438c7b16f07"
+  },
+  "id": "gLmkwuhcvK4bOo2U",
+  "tags": []
+}
